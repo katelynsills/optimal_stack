@@ -1,5 +1,6 @@
 
 
+open Core
 
 type opcode = DUP | DROP | SWAP | CDR | CAR | PUSH | POP | PAIR | UNPAIR | UNPIAR
 type values = Var of string | Pair of values * values
@@ -29,14 +30,45 @@ type solution = {mutable cost : float; mutable code : opcode list}
 
 module IntSet = Set.Make(struct type t = string let compare = compare end)
 
-let present_variables x = 
-  let rec list_variables = function
-    | Stack ((Var a)::s, r)       -> a::(list_variables (Stack (s,r)))
-    | Stack ((Pair (a,b))::s, r)  -> list_variables (Stack (a::b::s,r))
-    | Stack ([], (Var a)::r)      -> a::(list_variables (Stack ([],r)))
-    | Stack ([], (Pair (a,b))::r) -> list_variables (Stack ([],a::b::r))
-    | _ -> [] in
-  IntSet.of_list (list_variables x)
+let rec list_variables = function
+  | Stack ((Var a)::s, r)       -> a::(list_variables (Stack (s,r)))
+  | Stack ((Pair (a,b))::s, r)  -> list_variables (Stack (a::b::s,r))
+  | Stack ([], (Var a)::r)      -> a::(list_variables (Stack ([],r)))
+  | Stack ([], (Pair (a,b))::r) -> list_variables (Stack ([],a::b::r))
+  | _ -> []
+
+let present_variables x = IntSet.of_list (list_variables x)
+let variables_str x = String.concat "" (list_variables x)
+
+(* adapted from https://ocaml.janestreet.com/ocaml-core/109.31.00/doc/core_extended/Extended_string.html *)
+
+let edit_distance_matrix s1 s2 =
+  let l1, l2 = String.length s1, String.length s2 in
+  let d = Array.make_matrix (l1+1) (l2+1) 0 in
+  for x=0 to l1 do d.(x).(0) <- x done;
+  for y=0 to l2 do d.(0).(y) <- y done;
+  for y=1 to l2 do
+    for x=1 to l1 do
+      let min_d =
+        if s1.[x-1] = s2.[y-1] then d.(x-1).(y-1)
+        else List.reduce_exn ~f:min
+          [d.(x-1).(y) + 1;
+           d.(x).(y-1) + 1;
+           d.(x-1).(y-1) + 1]
+      in
+      let min_d =
+        if x > 1 && y > 1
+          && s1.[x-1] = s2.[y-2] && s1.[x-2] = s2.[y-1]
+        then min min_d (d.(x-2).(y-2) + 1)
+        else min_d
+      in
+      d.(x).(y) <- min_d
+    done;
+  done;
+  d
+
+let edit_distance s1 s2 =
+  (edit_distance_matrix s1 s2).(String.length s1).(String.length s2)
 
 (* An admissible heuristic for the cost of reaching sb from sa.
    It must always underestimate the cost
@@ -59,8 +91,8 @@ let heuristic sa sb =
     let varB = present_variables sb and varA =  present_variables sa in
     if not IntSet.(diff varB varA |> is_empty) then
       maxint
-    else (* rule b *)
-      let n = IntSet.(diff varA varB |> cardinal) in n
+    else 
+      let n  = edit_distance (variables_str sb) (variables_str sa) in n
   end
         
 let optimize sa sb =
