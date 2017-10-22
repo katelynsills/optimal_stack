@@ -1,7 +1,3 @@
-
-
-open Core
-
 type opcode = DUP | DROP | SWAP | CDR | CAR | PUSH | POP | PAIR | UNPAIR | UNPIAR
 type values = Var of string | Pair of values * values
 type stack = Invalid | Stack of (values list) * (values list)
@@ -40,6 +36,13 @@ let rec list_variables = function
 let present_variables x = IntSet.of_list (list_variables x)
 let variables_str x = String.concat "" (list_variables x)
 
+let time f =
+    let start = Core.Time.now () in
+    let x = f () in
+    let stop = Core.Time.now () in
+    Printf.printf "Time: %s\n" (Core.Time.Span.to_string (Core.Time.diff stop start));
+    x ;;
+
 (* adapted from https://ocaml.janestreet.com/ocaml-core/109.31.00/doc/core_extended/Extended_string.html *)
 
 let edit_distance_matrix s1 s2 =
@@ -51,7 +54,7 @@ let edit_distance_matrix s1 s2 =
     for x=1 to l1 do
       let min_d =
         if s1.[x-1] = s2.[y-1] then d.(x-1).(y-1)
-        else List.reduce_exn ~f:min
+        else Core.List.reduce_exn ~f:min
           [d.(x-1).(y) + 1;
            d.(x).(y-1) + 1;
            d.(x-1).(y-1) + 1]
@@ -73,6 +76,8 @@ let edit_distance s1 s2 =
 (* An admissible heuristic for the cost of reaching sb from sa.
    It must always underestimate the cost
 *)
+let maxint = 10000
+
 let heuristic sa sb =
   (* rules:
      a) each pair that needs to be destructured takes at least one op
@@ -82,7 +87,6 @@ let heuristic sa sb =
      e) drop should never follow dup
      f) invalid stacks are irrecoverable
   *)
-  let maxint = 10000 in
   (* rule f *)
   if sa = Invalid then
     maxint
@@ -103,7 +107,7 @@ let optimize sa sb =
     else begin
       let (s, (cost, total, code)) = Heap.pop nodes in
       if s = sb then
-        Some (cost, List.rev code)
+        Some (List.fold_left (fun acc x -> acc + opcost x) 0 code, List.rev code)
       else begin
         List.iter
           (fun opcode -> let sa = (run ([opcode], s)) and
@@ -126,5 +130,5 @@ let optimize sa sb =
 let example = function () ->
 let a = Var "a" and b = Var "b" and c = Var "c" in
 let start = Stack ([Pair (a, b); c], []) and target = Stack ([Pair (c,a); b], []) in
-optimize start target
+time (fun () -> optimize start target);;
   
